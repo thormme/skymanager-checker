@@ -28,6 +28,8 @@ var smtpConfig = {
     }
 };
 
+var monthURLs = [];
+
 function serialize(obj) {
     let str = Object.keys(obj).reduce(function(a, k){
         a.push(k + '=' + encodeURIComponent(obj[k]));
@@ -38,6 +40,7 @@ function serialize(obj) {
 
 // Login to the application
 function login() {
+  let paramsString = serialize(params);
   return request({
       uri: 'https://rfs.skymanager.com/Home/LogIn',
       method: 'POST',
@@ -46,8 +49,12 @@ function login() {
           'Content-Length' : paramsString.length
       },
       body: paramsString,
-      resolveWithFullResponse: true
+      resolveWithFullResponse: true,
+      simple: false
   }).then((response) => {
+      if (response.statusCode != 302 && response.statusCode != 200) {
+          throw response;
+      }
       // Save out cookies
       var sessionCookie = response.headers['set-cookie'].map((cookie) => cookie.split(';')[0]).join("; ");
       fs.writeFile('sessionCookie.txt', sessionCookie, function (err)
@@ -62,23 +69,27 @@ function login() {
   });
 }
 
+let parseConfig = () => {
+    return new Promise((resolve, reject) => {
+        fs.readFile('credentials.txt','utf8', (err, data) => {
+            if(err)
+            {
+                 reject(err);
+            }
+            let creds = JSON.parse(data);
+            params.Username = creds.Username;
+            params.Password = creds.Password;
 
-fs.readFile('credentials.txt','utf8', (err, data) => {
-    if(err)
-    {
-         throw err;
-    }
-    let creds = JSON.parse(data);
-    params.Username = creds.Username;
-    params.Password = creds.Password;
+            mailOptions.from = creds.mail.from;
+            mailOptions.to = creds.mail.to;
 
-    mailOptions.from = creds.mail.from;
-    mailOptions.to = creds.mail.to;
+            smtpConfig = creds.smtp;
 
-    smtpConfig = creds.smtp;
-});
-
-var paramsString = serialize(params);
+            monthURLs = creds.monthURLs;
+            resolve();
+        });
+    });
+}
 
 let loginWithSession = () => {
     return new Promise((resolve, reject) => {
@@ -94,14 +105,14 @@ let loginWithSession = () => {
                     headers: {"Cookie" : data},
                     resolveWithFullResponse: true
                 }).then(async (response) => {
+                    console.log("Using Previous Session");
+                }).catch(async (response) => {
                     if (response.statusCode === 500) {
                         console.log("Logging in");
                         await login();
                     } else {
-                        console.log("Using Previous Session");
+                        throw response;
                     }
-                }).catch((err) => {
-                    throw err;
                 }));
             }
         });
@@ -240,12 +251,10 @@ let printableMonths = (monthSlots) => {
 };
 
 
-loginWithSession().then(async () => {
-    let monthPromises = [
-        fetchSlots('https://rfs.skymanager.com/Instructor/Info/309230'),
-        fetchSlots('https://rfs.skymanager.com/Instructor/Info/309230?tDate=7%2F1%2F2019'),
-        fetchSlots('https://rfs.skymanager.com/Instructor/Info/309230?tDate=8%2F1%2F2019'),
-    ];
+parseConfig().then(() => loginWithSession().then(async () => {
+    let monthPromises = monthURLs.map((url) => {
+        return fetchSlots(url);
+    });
     let monthSlots = await Promise.all(monthPromises);
     monthSlots = Object.assign(...monthSlots);
     //console.log(printableMonths(await diffSlots(monthSlots)));
@@ -269,4 +278,4 @@ loginWithSession().then(async () => {
             throw err;
         }
     });
-}).then(() => {console.log("Done")})
+}).then(() => {console.log("Done")}));
