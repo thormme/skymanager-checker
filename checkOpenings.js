@@ -124,7 +124,7 @@ let getAvailableSlots = (document, minSlotMinutes, dayRange) => {
     // Convert times to minute arrays
     if (n.attributes && n.className !== "tooltip") {
       let times = (/(\d+):(\d+)([ap]m)\s*-\s*(\d+):(\d+)([ap]m)/g).exec(n.childNodes[0].textContent);
-      if (times) {
+      if (times && n.attributes.tooltip && !day.querySelector(`#${n.attributes.tooltip.value}`).textContent.match(/ALTERNATE/)) {
         return [parseInt(times[1] !== "12" ? times[1] : 0)*60 + (times[3] === "pm" ? 12*60 : 0) + parseInt(times[2]), parseInt(times[4] !== "12" ? times[4] : 0)*60 + (times[6] === "pm" ? 12*60 : 0) + parseInt(times[5])];
       }
     }
